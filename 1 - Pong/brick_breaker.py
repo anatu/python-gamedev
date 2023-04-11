@@ -78,12 +78,56 @@ class Game(tk.Frame):
 			self.canvas.itemconfig(self.hud, text=text)
 
 	def start_game(self):
-		pass
+		# Unbind spacebar on start so the player can't start
+		# the game twice
+		self.canvas.unbind('<space>')
+		# Delete splash text 
+		self.canvas.delete(self.text)
+		# Unbind the ball from the paddle, setting it into motion
+		self.paddle.ball = None
+		self.game_loop()
+
+	def game_loop(self):
+		# Check collisions
+		self.check_collisions()
+		# Get all brick objects (using the 'brick' tag defined
+		# in the constructor of the Brick class)
+		num_bricks = len(self.canvas.find_withtag('brick'))
+		# Check win condition (# bricks = 0)
+		if num_bricks == 0:
+			self.ball.speed = None
+			self.draw_text(300, 200, 'You win!')
+		# Life loss condition (ball goes past lower edge of canvas)
+		elif self.ball.get_position()[3] >= self.canv_h:
+			self.ball.speed = None
+			self.lives -= 1
+			# If lives = 0, game loss
+			if self.lives < 0:
+				self.draw_text(300, 200, 'Game Over!')
+			# Otherwise, reset the game for the next life
+			else:
+				self.after(1000, self.setup_game)
+		else:
+			self.ball.update()
+			self.after(50, self.game_loop)
+
+	# Checks and calculates collisions of the ball at each
+	# update step of the game loop
+	def check_collisions(self):
+		# Get ball coords and find all the objects that overlap with it
+		ball_coords = self.ball.get_position()
+		items = self.canvas.find_overlapping(*ball_coords)
+		# Filter out the list of objects that can't collide w/ the ball
+		# by cross-referencing the "items" dict we made in the constructor
+		objects = [self.items[x] for x in items if x in self.items]
+		# Calculate collisions for all collide-able objects
+		self.ball.collide(objects)
+
 
 
 # Game Object class that we'll use to facilitate
 # drawing objects on the canvas with simple helper functions.
-# More complex objects will inherit this
+# The in-game objects will extend this class
 class GameObject(object):
 	def __init__(self, canvas, item):
 		self.canvas = canvas
@@ -116,6 +160,59 @@ class Ball(GameObject):
 								fill='white')
 		# Use the superclass (GameObject) constructor to assign canvas/item vars
 		super(Ball, self).__init__(canvas, item)
+
+	# Update function for ball movement
+	# also includes collision logic for the edges of the canvas
+	def update(self):
+		coords = self.get_position()
+		width = self.canvas.winfo_width()
+		# Collision check for x-coords
+		# invert x-component of "velocity" if at a wall
+		if (coords[0] <= 0) or (coords[2] >= width):
+			self.direction[0] *= -1
+		# Same for y-component hitting top edge of screen
+		if coords[1] <= 0:
+			self.direction[1] *= -1
+		# Calculate dx, dy based on speed
+		x = self.direction[0] * self.speed
+		y = self.direction[1] * self.speed
+		# Perform movement
+		self.move(x,y)
+
+	# General function for calculating collision logic
+	# with in-game objects (i.e. paddle or bricks)
+	def collide(self, game_objects):
+		coords = self.get_position()
+		# Find x-coordinate of the center of the ball
+		x = (coords[0] + coords[2])*0.5
+		# If the ball collides w/ 2+ bricks at once, 
+		# only invert y-direction once 
+		if len(game_objects) > 1:
+			self.direction[1] *= -1
+		# If only 1 brick being hit, calculate collision logic
+		# based on where the brick is being hit by the ball
+		elif len(game_objects) == 1:
+			game_object = game_objects[0]
+			coords = game_object.get_position()
+			# If the ball hits the side of a brick (i.e. ball's x-centroid
+			# is past the left or right edge of the brick),
+			# set the ball to left/right x-velocity depending
+			# on which edge it's past  
+			if x > coords[2]:
+				self.direction[0] = 1
+			elif x < coords[0]:
+				self.direction[0] = -1
+			# If the ball is "over" the brick (i.e. it's x-centroid
+			# is between the left/right edges of the brick)
+			# then just invert y-velocity, x-vel is unchanged
+			else:
+				self.direction[1] *= -1
+
+			# If the object being collided w/ is a Brick,
+			# call that Brick object's method to register the hit
+			for game_object in game_objects:
+				if isinstance(game_object, Brick):
+					game_object.hit()
 
 # Paddle that the player moves around to hit the ball
 class Paddle(GameObject):
