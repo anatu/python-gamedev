@@ -25,7 +25,7 @@ import cocos.layer
 
 from collections import defaultdict
 from pyglet.window import key
-
+from pyglet.image import load, ImageGrid, Animation
 
 ### BASE SUBCLASSES ###
 #########################################################
@@ -85,6 +85,44 @@ class GameLayer(cocos.layer.Layer):
 	def on_key_release(self, k, _):
 		PlayerCannon.KEYS_PRESSED[k] = 0
 
+	# Create the player cannon in the horizontal midpoint
+	# of the canvas
+	def create_player(self):
+		self.player = PlayerCannon(self.width*0.5, 50)
+
+	# Simple helper function to update the score by a defined amount
+	def update_score(self, score=0):
+		self.score += score
+
+	# Create the group of aliens
+	def create_alien_group(self, x, y):
+		pass
+
+	# Define the update callback method which is executed for each frame
+	# with latency dt (milliseconds) which implicitly define framerate
+	def update(self, dt):
+		self.collman.clear()
+		for _, node in self.children:
+			self.collman.add(node)
+			# knows() method checks whether an object is in the set
+			# of known entities. Object should only be unknown if it 
+			# leaves the area covered by the collision manager
+			if not self.collman.knows(node):
+				self.remove(node)
+
+		for _, node in self.children:
+			node.update(dt) 
+
+	# Checks if there are any valid objects to calculate collisions for
+	# using iter_colliding(), and then perform collision with collide() 
+	def collide(self, node):
+		if node is not None:
+			for other in self.collman.iter_colliding(node):
+				node.collide(other)
+				return True
+		return False
+
+
 
 ### ACTOR SUBCLASSES ###
 #########################################################
@@ -95,7 +133,7 @@ class PlayerCannon(Actor):
 	KEYS_PRESSED = defaultdict(int)
 
 	def __init__(self, x, y):
-		# Build sprite with Actor class constructor
+		# Build sprite with Actor superclass constructor
 		super(PlayerCannon, self).__init__('img/cannon.png', x, y)
 		# Speed vector has no y-component (only horizontal mvmt)
 		self.speed = eu.Vector2(200, 0)
@@ -112,5 +150,55 @@ class PlayerCannon(Actor):
 	def collide(self, other):
 		other.kill()
 		self.kill()
+
+# Alien actor - this is the base class for all three Alien types.
+class Alien(Actor):
+	def __init__(self, img, x, y, score, column=None):
+		# Build sprite w/ superclass constructor
+		super(Alien, self).__init__(img, x, y)
+		# Define the score that is accrued on killing the alien
+		# and the column it goes into
+		self.score = score
+		self.column = column
+
+	# Helper method to take an image path and build an animation
+	# for the sprite
+	def load_animation(image):
+		seq = ImageGrid(load(image), 2, 1)
+		return Animation.from_image_sequence(seq, 0.5)
+
+	# Define the three alien types by loading the animation sprites
+	# for each type, and defining the score gained by killing each
+	TYPES = {
+		'1': (load_animation('img/alien1.png'), 40)
+		'2': (load_animation('img/alien2.png'), 20)
+		'3': (load_animation('img/alien3.png'), 10)
+	}
+
+	# Actual constructor method which uses the base constructor
+	# to build an alien of the type specified in the call to this method
+	def from_type(x, y, alien_type, column):
+		animation, score = Alien.TYPES[alien_type]
+		return Alien(animation, x, y, score, column)
+
+	# Callback method when a node is removed, 
+	# which has been overriden to inform its corresponding column
+	# (i.e. to make sure the AlienColumn class "knows" its member alien
+	# has been removed)
+	def on_exit(self):
+		super(Alien, self).on_exit()
+		if self.column:
+			self.column.remove(self)
+
+
+### MAIN FUNCTION ###
+#########################################################
+
+if __name__ == '__main__':
+	cocos.director.director.init(caption = 'Cocos Invaders',
+								width=800, height=650)
+	game_layer = GameLayer()
+	main_scene = cocos.scene.Scene(game_layer)
+	cocos.director.director.run(main_scene)
 
 
