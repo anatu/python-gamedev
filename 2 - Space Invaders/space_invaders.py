@@ -89,14 +89,18 @@ class GameLayer(cocos.layer.Layer):
 	# of the canvas
 	def create_player(self):
 		self.player = PlayerCannon(self.width*0.5, 50)
+		self.add(self.player)
 
 	# Simple helper function to update the score by a defined amount
 	def update_score(self, score=0):
 		self.score += score
 
-	# Create the group of aliens
+	# Creates the alien group using the AlienGroup class
+	# and adds it to the GameLayer
 	def create_alien_group(self, x, y):
-		pass
+		self.alien_group = AlienGroup(x, y)
+		for alien in self.alien_group:
+			self.add(alien)
 
 	# Define the update callback method which is executed for each frame
 	# with latency dt (milliseconds) which implicitly define framerate
@@ -170,8 +174,8 @@ class Alien(Actor):
 	# Define the three alien types by loading the animation sprites
 	# for each type, and defining the score gained by killing each
 	TYPES = {
-		'1': (load_animation('img/alien1.png'), 40)
-		'2': (load_animation('img/alien2.png'), 20)
+		'1': (load_animation('img/alien1.png'), 40),
+		'2': (load_animation('img/alien2.png'), 20),
 		'3': (load_animation('img/alien3.png'), 10)
 	}
 
@@ -189,6 +193,86 @@ class Alien(Actor):
 		super(Alien, self).on_exit()
 		if self.column:
 			self.column.remove(self)
+
+# Class for a single column of aliens, constructed using
+# the Alien class 
+class AlienColumn(object):
+	def __init__(self, x, y):
+		# Define the ordering of alien types that constitute
+		# a single column and iterate over that list to
+		# construct each individual Alien in the column
+		alien_types = enumerate(['3', '3', '2', '2', '1'])
+		self.aliens = [Alien.from_type(x, y+i*60, alien, self)
+						for i, alien in alien_types]
+
+	# Eliminate a given alien from the column
+	def remove(self, alien):
+		self.aliens.remove(alien)
+
+	# Alien shooting at player
+	def shoot(self):
+		pass
+
+	# Checks whether the column has reached the side of the screen
+	# to see if it should turn around
+	def should_turn(self, d):
+		# Throw False if no aliens left in column
+		if len(self.aliens) == 0:
+			return False
+		alien = self.aliens[0]
+		x, width = alien.x, alien.parent.width
+		# Check the direction the column is moving (d) and whether
+		# it's reached that edge of the screen (w/padding of 50px)
+		return (x >= width - 50 and d == 1) or (x <= 50 and d == -1)
+
+# Class for the entire group of aliens, which are constructed
+# as a set of AlienColumn objects (which in turn consist of Alien objects)
+class AlienGroup(object):
+	def __init__(self, x, y):
+		# Define the columns
+		self.columns = [AlienColumn(x + i*60, y) for i in range (10)]
+		# Define parameters for the group (speed, timing, etc.)
+		self.speed = eu.Vector2(10, 0)
+		self.direction = 1
+		self.elapsed = 0.0
+		self.period = 1.0
+
+	# Update function to move the group
+	# Calculates time elapsed vs. the period. The period
+	# is the time window after which the group moves down the screen
+	# by one step towards the player
+	def update(self, elapsed):
+		self.elapsed += elapsed
+		while self.elapsed >= self.period:
+			# Decrement elapsed time from period
+			self.elapsed -= self.period
+			# Calculate offset amount based on speed * direction
+			offset = self.direction*self.speed
+			# If one side has been reached, invert the direction
+			# and make the offset vertically downward
+			if self.side_reached():
+				self.direction *= -1
+				offset = eu.Vector2(0, -10)
+			# Move all aliens by the offset amount
+			for alien in self:
+				alien.move(offset)
+
+	# Figure out if the group has reached a lateral edge by calling
+	# the should_turn function on each member column to see if any of them
+	# have reached an edge	
+	def side_reached(self):
+		return any(map(lambda c: c.should_turn(self.direction), 
+						self.columns))
+
+	# Define iterator method which lets us iterate through member
+	# columns of the group and member aliens of the column using
+	# nested for loops
+	def __iter__(self):
+		for column in self.columns:
+			for alien in self.columns:
+				yield alien
+
+
 
 
 ### MAIN FUNCTION ###
